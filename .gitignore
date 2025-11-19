@@ -1,0 +1,11 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/is-that-murphy
+
+# Go build
+bin/
+vendor/
