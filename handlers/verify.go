@@ -3,13 +3,14 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/ellied33/is-that-murphy/models"
 	"github.com/ellied33/is-that-murphy/store"
 )
 
 func VerifyHandler(w http.ResponseWriter, r *http.Request) {
-	value := r.URL.Query().Get("value")
+	value := strings.TrimSpace(r.URL.Query().Get("value"))
 	if value == "" {
 		http.Error(w, "missing value", http.StatusBadRequest)
 		return
@@ -20,7 +21,7 @@ func VerifyHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		json.NewEncoder(w).Encode(map[string]string{
 			"value": "value",
-			"type": "not verfied",
+			"type": "not verified",
 		})
 	}
 }
