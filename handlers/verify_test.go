@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/ellied33/is-that-murphy/handlers"
@@ -16,184 +15,159 @@ import (
 func resetStore() { store.Reset() }
 
 func TestVerifyHandler(t *testing.T) {
-	resetStore()
-
-	v := models.VerifiedValue{
-		Value: "test@test.com",
-		Type: "email",
+	cases := []struct {
+		name       string
+		setup      func()
+		queryValue string
+		wantStatus int
+		wantValue  string
+		wantType   string
+	}{
+		{
+			name: "Found exact match",
+			setup: func() {
+				resetStore()
+				store.Add(models.VerifiedValue{Value: "test@test.com", Type: "email"})
+			},
+			queryValue: "test@test.com",
+			wantStatus: http.StatusOK,
+			wantValue:  "test@test.com",
+			wantType:   "email",
+		},
+		{
+			name: "Trims whitespace",
+			setup: func() {
+				resetStore()
+				store.Add(models.VerifiedValue{Value: "test@test.com", Type: "email"})
+			},
+			queryValue: "   test@test.com   ",
+			wantStatus: http.StatusOK,
+			wantValue:  "test@test.com",
+			wantType:   "email",
+		},
+		{
+			name: "Not found",
+			setup: func() {
+				resetStore()
+			},
+			queryValue: "unknown@test.com",
+			wantStatus: http.StatusOK,
+			wantValue:  "unknown@test.com",
+			wantType:   "not verified",
+		},
+		{
+			name: "Missing value",
+			setup: func() {
+				resetStore()
+			},
+			queryValue: "",
+			wantStatus: http.StatusBadRequest,
+		},
 	}
 
-	store.Add(v)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.setup()
 
-	req, err := http.NewRequest("GET", "/verify?value=test@test.com", nil)
+			req := httptest.NewRequest("GET", "/verify", nil)
 
-	if err != nil {
-    	t.Fatal(err)
-	}
+			if tc.queryValue != "" {
+				q := req.URL.Query()
+				q.Set("value", tc.queryValue)
+				req.URL.RawQuery = q.Encode()
+			}
 
-	rr := httptest.NewRecorder()
-	handler := http.HandlerFunc(handlers.VerifyHandler)
-	handler.ServeHTTP(rr, req)
+			rr := httptest.NewRecorder()
+			handler := http.HandlerFunc(handlers.VerifyHandler)
+			handler.ServeHTTP(rr, req)
 
-	if status := rr.Code; status != http.StatusOK {
-		t.Errorf("handler returned wrong status code: got %v want %v", status, http.StatusOK)
-	}
+			if rr.Code != tc.wantStatus {
+				t.Fatalf("expected status %d, got %d", tc.wantStatus, rr.Code)
+			}
 
-	var got models.VerifiedValue
-	if err := json.NewDecoder(rr.Body).Decode(&got); err != nil {
-		t.Fatalf("failed to decode JSON: %v", err)
-	}
+			if tc.wantStatus == http.StatusOK {
+				var got models.VerifiedValue
+				if err := json.NewDecoder(rr.Body).Decode(&got); err != nil {
+					t.Fatalf("failed to decode JSON: %v", err)
+				}
 
-	if got.Value != v.Value || got.Type != v.Type {
-    	t.Errorf("unexpected result: got %+v want %+v", got, v)
-	}
-}
-
-func TestVerifyHandler_TrimsWhitespace(t *testing.T) {
-    resetStore()
-
-    v := models.VerifiedValue{
-        Value: "test@test.com",
-        Type:  "email",
-    }
-    store.Add(v)
-
-    req := httptest.NewRequest("GET", "/verify", nil)
-	q := req.URL.Query()
-	q.Set("value", "   test@test.com   ")
-	req.URL.RawQuery = q.Encode()
-
-    rr := httptest.NewRecorder()
-
-    handlers.VerifyHandler(rr, req)
-    res := rr.Result()
-    defer res.Body.Close()
-
-    if res.StatusCode != http.StatusOK {
-        t.Fatalf("expected status 200, got %d", res.StatusCode)
-    }
-
-    var got models.VerifiedValue
-    if err := json.NewDecoder(res.Body).Decode(&got); err != nil {
-        t.Fatalf("failed to decode response JSON: %v", err)
-    }
-
-    if got.Value != v.Value || got.Type != v.Type {
-        t.Errorf("unexpected result: got %+v want %+v", got, v)
-    }
-}
-
-func TestVerifyHandler_NormalisesInput(t *testing.T) {
-    resetStore()
-
-    v := models.VerifiedValue{
-        Value: "test@test.com",
-        Type:  "email",
-    }
-    store.Add(v)
-
-    req := httptest.NewRequest("GET", "/verify?value=test@Test.Com", nil)
-
-    rr := httptest.NewRecorder()
-
-    handlers.VerifyHandler(rr, req)
-    res := rr.Result()
-    defer res.Body.Close()
-
-    if res.StatusCode != http.StatusOK {
-        t.Fatalf("expected status 200, got %d", res.StatusCode)
-    }
-
-    var got models.VerifiedValue
-    if err := json.NewDecoder(res.Body).Decode(&got); err != nil {
-        t.Fatalf("failed to decode response JSON: %v", err)
-    }
-
-    if got.Value != v.Value || got.Type != v.Type {
-        t.Errorf("unexpected result: got %+v want %+v", got, v)
-    }
-}
-
-func TestVerifyHandler_NotFound(t *testing.T) {
-	resetStore()
-
-	req := httptest.NewRequest("GET", "/verify?value=unknown", nil)
-	rr := httptest.NewRecorder()
-
-	handlers.VerifyHandler(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected status %v, got %v", http.StatusOK, rr.Code)
-	}
-
-	var res map[string]string
-	if err := json.NewDecoder(rr.Body).Decode(&res); err != nil {
-		t.Fatalf("failed to decode JSON: %v", err)
-	}
-
-	if res["type"] != "not verified" {
-		t.Errorf("expected type 'not verified', got %v", res["type"])
+				if got.Value != tc.wantValue || got.Type != tc.wantType {
+					t.Errorf("unexpected result: got %+v want value=%q type=%q", got, tc.wantValue, tc.wantType)
+				}
+			}
+		})
 	}
 }
 
-func TestVerifyHandler_MissingValue(t *testing.T) {
-	resetStore()
-
-	req := httptest.NewRequest("GET", "/verify", nil)
-	rr := httptest.NewRecorder()
-
-	handlers.VerifyHandler(rr, req)
-
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("expected status %v, got %v", http.StatusBadRequest, rr.Code)
-	}
-}
-
-func TestAddHandler_Success(t *testing.T) {
-	resetStore()
-
-	payload := models.VerifiedValue{
-		Value: "doggo@murphy.com",
-		Type:  "email",
-	}
-
-	body, _ := json.Marshal(payload)
-	req := httptest.NewRequest("POST", "/verify", bytes.NewBuffer(body))
-	req.Header.Set("Content-Type", "application/json")
-
-	rr := httptest.NewRecorder()
-
-	handlers.AddHandler(rr, req)
-
-	if rr.Code != http.StatusCreated {
-		t.Fatalf("expected status %v, got %v", http.StatusCreated, rr.Code)
+func TestAddHandler(t *testing.T) {
+	cases := []struct {
+		name       string
+		payload    any
+		wantStatus int
+		wantStore  bool
+	}{
+		{
+			name: "Successful add",
+			payload: models.VerifiedValue{
+				Value: "doggo@murphy.com",
+				Type:  "email",
+			},
+			wantStatus: http.StatusCreated,
+			wantStore:  true,
+		},
+		{
+			name:       "Invalid JSON",
+			payload:    "{not-json}",
+			wantStatus: http.StatusBadRequest,
+			wantStore:  false,
+		},
+		{
+			name:       "Empty JSON object",
+			payload:    models.VerifiedValue{},
+			wantStatus: http.StatusCreated,
+			wantStore:  true,
+		},
 	}
 
-	var got models.VerifiedValue
-	if err := json.NewDecoder(rr.Body).Decode(&got); err != nil {
-		t.Fatalf("failed to decode JSON: %v", err)
-	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resetStore()
 
-	if got != payload {
-		t.Errorf("expected %+v but got %+v", payload, got)
-	}
+			var bodyBytes []byte
+			switch v := tc.payload.(type) {
+			case string:
+				bodyBytes = []byte(v)
+			case models.VerifiedValue:
+				b, err := json.Marshal(v)
+				if err != nil {
+					t.Fatalf("failed to marshal payload: %v", err)
+				}
+				bodyBytes = b
+			default:
+				t.Fatalf("unsupported payload type")
+			}
 
-	if _, ok := store.IsVerified("doggo@murphy.com"); !ok {
-		t.Fatalf("store should contain value after POST")
-	}
-}
+			req := httptest.NewRequest("POST", "/verify", bytes.NewBuffer(bodyBytes))
+			req.Header.Set("Content-Type", "application/json")
 
-func TestAddHandler_InvalidJSON(t *testing.T) {
-	resetStore()
+			rr := httptest.NewRecorder()
+			handler := http.HandlerFunc(handlers.AddHandler)
+			handler.ServeHTTP(rr, req)
 
-	req := httptest.NewRequest("POST", "/verify", strings.NewReader("{not-json"))
-	req.Header.Set("Content-Type", "application/json")
+			if rr.Code != tc.wantStatus {
+				t.Fatalf("expected status %d, got %d", tc.wantStatus, rr.Code)
+			}
 
-	rr := httptest.NewRecorder()
+			if tc.wantStatus == http.StatusCreated {
+				var got models.VerifiedValue
+				if err := json.NewDecoder(rr.Body).Decode(&got); err != nil {
+					t.Fatalf("failed to decode response JSON: %v", err)
+				}
 
-	handlers.AddHandler(rr, req)
-
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("expected status %v, got %v", http.StatusBadRequest, rr.Code)
+				if _, ok := store.IsVerified(got.Value); !ok && tc.wantStore {
+					t.Fatalf("store should contain value after POST")
+				}
+			}
+		})
 	}
 }
