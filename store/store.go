@@ -30,3 +30,10 @@ func IsVerified(value string) (models.VerifiedValue, bool) {
 	v, ok := verifiedMap[strings.ToLower(value)]
 	return v, ok
 }
+
+// Reset helper for testing
+func Reset() {
+    mu.Lock()
+    defer mu.Unlock()
+    verifiedMap = map[string]models.VerifiedValue{}
+}
