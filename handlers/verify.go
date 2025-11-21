@@ -2,26 +2,36 @@ package handlers
 
 import (
 	"encoding/json"
+	"html"
 	"net/http"
-	"strings"
 
 	"github.com/ellied33/is-that-murphy/models"
 	"github.com/ellied33/is-that-murphy/store"
+	"github.com/ellied33/is-that-murphy/utils"
 )
 
 func VerifyHandler(w http.ResponseWriter, r *http.Request) {
-	value := strings.TrimSpace(r.URL.Query().Get("value"))
+	const MaxInputLength = 1024
+
+	value := r.URL.Query().Get("value")
+
 	if value == "" {
 		http.Error(w, "missing value", http.StatusBadRequest)
 		return
 	}
+	if len(value) > MaxInputLength {
+		http.Error(w, "input too long", http.StatusBadRequest)
+		return
+	}
 
-	if v, ok := store.IsVerified(value); ok {
+	c := utils.Canonical(value)
+
+	if v, ok := store.IsVerified(c); ok {
 		json.NewEncoder(w).Encode(v)
 	} else {
 		json.NewEncoder(w).Encode(map[string]string{
-			"value": value,
-			"type": "not verified",
+			"value": html.EscapeString(value),
+			"type":  "not verified",
 		})
 	}
 }

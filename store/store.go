@@ -5,8 +5,8 @@ import (
 	"sync"
 
 	"github.com/ellied33/is-that-murphy/models"
+	"github.com/ellied33/is-that-murphy/utils"
 )
-
 
 // Creating a look-up, allows multiple reads at once, but locks while writing happens
 var (
@@ -16,11 +16,15 @@ var (
 
 // Lock while writing because writing alters memory, unsafe to allow multiple actions during this
 func Add(v models.VerifiedValue) {
-	mu.Lock()
-	defer mu.Unlock()
+    mu.Lock()
+    defer mu.Unlock()
 
-	verifiedMap[strings.ToLower(v.Value)] = v
+    v.Value = utils.Canonical(v.Value)
+    v.Type = utils.Canonical(v.Type)
+
+    verifiedMap[v.Value] = v
 }
+
 
 // Check whether entry exists, any number of reads can happen at once
 func IsVerified(value string) (models.VerifiedValue, bool) {
