@@ -116,6 +116,15 @@ func TestAddHandler(t *testing.T) {
 			wantStore:  true,
 		},
 		{
+			name: "Incomplete JSON",
+			payload: models.VerifiedValue{
+				Value: "doggo@murphy.com",
+				Type:  "",
+			},
+			wantStatus: http.StatusBadRequest,
+			wantStore:  false,
+		},
+		{
 			name:       "Invalid JSON",
 			payload:    "{not-json}",
 			wantStatus: http.StatusBadRequest,
@@ -124,8 +133,14 @@ func TestAddHandler(t *testing.T) {
 		{
 			name:       "Empty JSON object",
 			payload:    models.VerifiedValue{},
-			wantStatus: http.StatusCreated,
-			wantStore:  true,
+			wantStatus: http.StatusBadRequest,
+			wantStore:  false,
+		},
+		{
+			name:       "Extra field rejected",
+			payload:    `{"value":"doggo@murphy.com","type":"email","wrong":"oops"}`,
+			wantStatus: http.StatusBadRequest,
+			wantStore:  false,
 		},
 	}
 

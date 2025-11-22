@@ -37,11 +37,20 @@ func VerifyHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func AddHandler(w http.ResponseWriter, r *http.Request) {
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+
 	var v models.VerifiedValue
-	if err := json.NewDecoder(r.Body).Decode(&v); err != nil {
+	if err := decoder.Decode(&v); err != nil {
+		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err := v.Validate(); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	
 	store.Add(v)
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(v)
